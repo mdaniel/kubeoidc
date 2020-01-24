@@ -32,9 +32,10 @@ jobs:
         set -x
         if ! type gox >/dev/null 2>&1; then
           go get -u github.com/mitchellh/gox
+          ls -la ~/go/bin
         fi
         if ! type gox >/dev/null 2>&1; then
-          PATH=$GOPATH/bin:$PATH
+          PATH=~/go/bin:$PATH
           gox -version || true
         fi
         make
