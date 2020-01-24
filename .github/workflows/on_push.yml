@@ -60,4 +60,4 @@ jobs:
       uses: actions/upload-artifact@v1
       with:
         name: binary
-        path: release/${{ matrix.binary_filename }}
+        path: binaries/${{ matrix.binary_filename }}
