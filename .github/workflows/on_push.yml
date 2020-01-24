@@ -1,0 +1,36 @@
+name: Go
+on:
+- push
+jobs:
+  build:
+    name: Build
+    runs-on: [ubuntu-18.04]
+    steps:
+    - name: Set up Go 1.13
+      id: go
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.13
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Cache
+      uses: actions/cache@v1.1.0
+      with:
+        path: /home/.cache/go-build
+        key: v1-cache-go-build
+
+    - name: Get dependencies
+      run: |
+        go mod download
+        go get -u github.com/mitchellh/gox
+
+    - name: Build
+      run: make
+
+    - name: Archive build output
+      uses: actions/upload-artifact@v1
+      with:
+        name: binaries
+        path: release/
