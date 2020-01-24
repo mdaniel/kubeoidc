@@ -19,7 +19,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var version = "1.1.0"
+var version = "2.0.0"
 var alphabet = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 func init() {
@@ -27,11 +27,19 @@ func init() {
 }
 
 func main() {
+	var listenHost = flag.String("callback-host", "localhost", "Callback URL hostname")
+	var listenPort = flag.Int("callback-port", -1, "Callback URL local port (-1 means pick a free port)")
+	var listenUri = flag.String("callback-uri", "/implicit/callback", "Callback URL path")
+
 	var issuerURL = flag.String("issuer", "", "Issuer URL")
 	var clientID = flag.String("client-id", "", "Client ID")
 	var clientSecret = flag.String("client-secret", "", "Client Secret")
+	var scopes = flag.String("scopes", "email,groups,offline_access,profile", "Comma separated scopes to request")
+
+	var openBrowser = flag.Bool("open-browser", true, "Launch the default browser (false means just print the URL)")
 	var credentialName = flag.String("set-credentials", "", "If name of credentials is set, kubeoidc configures credentials by executing kubectl")
-	var versionMode = flag.Bool("version", false, "Show version")
+
+	var versionMode = flag.Bool("version", false, "Show version (and exit)")
 	flag.Parse()
 
 	if *versionMode {
@@ -39,34 +47,47 @@ func main() {
 		return
 	}
 
-	port, err := freeport.GetFreePort()
-	if err != nil {
-		log.Fatal(err)
+	var port int
+	if listenPort != nil && *listenPort != -1 {
+		port = *listenPort
+	} else {
+		freePort, err := freeport.GetFreePort()
+		if err != nil {
+			log.Fatal(err)
+		}
+		port = freePort
 	}
 
 	server, err := newServer(
 		*issuerURL,
 		*clientID,
 		*clientSecret,
-		fmt.Sprintf("http://localhost:%d/callback", port),
+		fmt.Sprintf("http://%s:%d%s", *listenHost, port, *listenUri),
 		*credentialName,
+		strings.Split(*scopes, ","),
 	)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/callback", server.handleCallback)
+	http.HandleFunc(*listenUri, server.handleCallback)
 
-	listen := fmt.Sprintf("localhost:%d", port)
+	listen := fmt.Sprintf("%s:%d", *listenHost, port)
 	log.Printf("INFO: Listening %s", listen)
 	go func() {
 		log.Fatal(http.ListenAndServe(listen, nil))
 	}()
 
 	url := server.authURL()
-	log.Printf("INFO: Opening %s", url)
-	open.Start(url)
+	if *openBrowser {
+		log.Printf("INFO: Opening %s", url)
+		if err := open.Start(url); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		fmt.Printf("url: %s\n", url)
+	}
 	server.wait()
 }
 
@@ -93,22 +114,33 @@ func newState() string {
 	return string(b)
 }
 
-func newServer(issuerURL, clientID, clientSecret, redirectURL, credentialName string) (*server, error) {
+func newServer(issuerURL, clientID, clientSecret, redirectURL, credentialName string, oidcScopes []string) (*server, error) {
+	if issuerURL == "" {
+		return nil, fmt.Errorf("issuerURL is a required parameter")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("clientID is a required parameter")
+	}
+	if clientSecret == "" {
+		return nil, fmt.Errorf("clientSecret is a required parameter")
+	}
+	if redirectURL == "" {
+		return nil, fmt.Errorf("redirectURL is a required parameter")
+	}
 	ctx := context.Background()
 	provider, err := oidc.NewProvider(ctx, issuerURL)
 	if err != nil {
 		return nil, err
 	}
-	isGoogle := strings.Index(issuerURL, "https://accounts.google.com") == 0
-	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
 
 	// google does not tolerate "groups" or "offline_access"
 	// they have their own peoplev1 specific scopes for obtaining groups
 	// and the offline_access needs to be a separate query param
 	// https://developers.google.com/identity/protocols/OpenIDConnect#scope-param
-	if !isGoogle {
-		scopes = append(scopes, "groups", "offline_access")
-	}
+	isGoogle := strings.Index(issuerURL, "https://accounts.google.com") == 0
+	scopes := []string{oidc.ScopeOpenID}
+	scopes = append(scopes, oidcScopes...)
+
 	oauth2Config := oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -153,12 +185,18 @@ func (s *server) handleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) _handleCallback(w http.ResponseWriter, r *http.Request) error {
-	state := r.URL.Query().Get("state")
+	query := r.URL.Query()
+	state := query.Get("state")
 	if s.state != state {
 		return errors.New("state paremeter mismatch")
 	}
-
-	oauth2Token, err := s.oauth2.Exchange(context.Background(), r.URL.Query().Get("code"))
+	if errorParam := query.Get("error"); errorParam != "" {
+		if errorDesc := query.Get("error_description"); errorDesc != "" {
+			return fmt.Errorf("%s: %s", errorParam, errorDesc)
+		}
+		return fmt.Errorf("%s", errorParam)
+	}
+	oauth2Token, err := s.oauth2.Exchange(context.Background(), query.Get("code"))
 	if err != nil {
 		return err
 	}
@@ -174,7 +212,9 @@ func (s *server) _handleCallback(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var c json.RawMessage
-	idToken.Claims(&c)
+	if err := idToken.Claims(&c); err != nil {
+		return err
+	}
 	log.Printf("%s", c)
 
 	var claims struct {
