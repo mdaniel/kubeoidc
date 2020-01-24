@@ -44,6 +44,7 @@ jobs:
   archive_them:
     name: Archive
     runs-on: [ubuntu-18.04]
+    needs: build
     strategy:
       matrix:
         binary_filename:
