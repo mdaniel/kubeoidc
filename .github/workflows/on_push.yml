@@ -29,19 +29,34 @@ jobs:
 
     - name: Build
       run: |
-        set -x
+        PATH=~/go/bin:$PATH
         if ! type gox >/dev/null 2>&1; then
           go get -u github.com/mitchellh/gox
-          ls -la ~/go/bin
-        fi
-        if ! type gox >/dev/null 2>&1; then
-          PATH=~/go/bin:$PATH
-          gox -version || true
         fi
         make
 
-    - name: Archive build output
+    - name: create archive zip
       uses: actions/upload-artifact@v1
       with:
         name: binaries
-        path: release/*
+        path: release
+
+  archive_them:
+    name: Archive
+    runs-on: [ubuntu-18.04]
+    strategy:
+      matrix:
+        binary_filename:
+        - kubeoidc_darwin_amd64
+        - kubeoidc_linux_amd64
+        - kubeoidc_linux_amd64.exe
+    steps:
+    - name: fetch build artifact
+      uses: actions/download-artifact@v1
+      with:
+        name: binaries
+    - name: Archive build output
+      uses: actions/upload-artifact@v1
+      with:
+        name: binary
+        path: release/${{ matrix.binary_filename }}
