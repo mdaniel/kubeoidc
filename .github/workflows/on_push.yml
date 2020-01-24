@@ -50,7 +50,7 @@ jobs:
         binary_filename:
         - kubeoidc_darwin_amd64
         - kubeoidc_linux_amd64
-        - kubeoidc_linux_amd64.exe
+        - kubeoidc_windows_amd64.exe
     steps:
     - name: fetch build artifact
       uses: actions/download-artifact@v1
