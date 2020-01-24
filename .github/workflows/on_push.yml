@@ -26,10 +26,18 @@ jobs:
     - name: Get dependencies
       run: |
         go mod download
-        go get -u github.com/mitchellh/gox
 
     - name: Build
-      run: make
+      run: |
+        set -x
+        if ! type gox >/dev/null 2>&1; then
+          go get -u github.com/mitchellh/gox
+        fi
+        if ! type gox >/dev/null 2>&1; then
+          PATH=$GOPATH/bin:$PATH
+          gox -version || true
+        fi
+        make
 
     - name: Archive build output
       uses: actions/upload-artifact@v1
