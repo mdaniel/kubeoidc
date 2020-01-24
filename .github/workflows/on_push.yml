@@ -18,8 +18,10 @@ jobs:
     - name: Cache
       uses: actions/cache@v1.1.0
       with:
-        path: /home/.cache/go-build
-        key: v1-cache-go-build
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
 
     - name: Get dependencies
       run: |
